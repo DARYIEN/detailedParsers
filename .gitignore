@@ -1,0 +1,7 @@
+.idea/*
+files/*
+test.php
+pull.sh
+del_old_files.sh
+priceshop/*
+mainclasses/config/*
