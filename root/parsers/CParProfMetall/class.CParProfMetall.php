@@ -37,7 +37,7 @@ class CParProfmetall extends CParMain {
             "absolute_link" => false
         ];
         $categories = $this->gettingUrls($url, $data);
-        #$categories = array_slice($categories, 0, 1);
+        $categories = array_slice($categories, 84, 12);
 
         $this->logMessage("Найдено " . count($categories) . " подкатегорий.");
 

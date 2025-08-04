@@ -14,6 +14,10 @@ class CParMain
     public $productCount;
     public $slower_parse;
     public $city_name;
+    public $batchSize = 4000;
+    private $tempFilePrefix = 'temp_data_';
+    private $tempFiles = [];
+    private $itemCounter = 0;
 
     /*
     ----------------------------------
@@ -338,6 +342,14 @@ class CParMain
                     }
                     $productsData++;
                 }
+                $this->itemCounter++;
+                if ($this->itemCounter >= $this->batchSize) {
+                    $this->saveBatchData($productsData);
+                    if (!$shortparse && $data["title"] === "Ссылки на товары") {
+                        $productsData = [];
+                    }
+                    $this->itemCounter = 0;
+                }
             }
         };
 
@@ -365,10 +377,17 @@ class CParMain
                 # Категории
                 $categoryLinks = $xpath->query($data["category_selector"]);
                 foreach ($categoryLinks as $link) {
-                    $link = $link->nodeValue;
-                    if (strpos($link, "https://") !== false) $productsData[] = $link;
-                    elseif (strpos($link, "http://") !== false) $productsData[] = $link;
-                    else $productsData[] = $this->site_link . $link;
+                    if ($dualData) {
+                        $link = $link->nodeValue;
+                        if (strpos($link, "https://") !== false) $productsData[$key][] = $link;
+                        elseif (strpos($link, "http://") !== false) $productsData[$key][] = $link;
+                        else $productsData[$key][] = $this->site_link . $link;
+                    } else {
+                        $link = $link->nodeValue;
+                        if (strpos($link, "https://") !== false) $productsData[] = $link;
+                        elseif (strpos($link, "http://") !== false) $productsData[] = $link;
+                        else $productsData[] = $this->site_link . $link;
+                    }
                 }
 
             }
@@ -407,7 +426,7 @@ class CParMain
                         $current_page = "$key{$data['url_argument']}$i.html";
                     } else {
                         if ($data["/}"]) $current_page = "$key/{$data['url_argument']}$i/";
-                        else  $current_page = "$key{$data['url_argument']}$i/";
+                        else  $current_page = "$key{$data['url_argument']}$i";
                     }
 
                     if (!in_array($current_page, $paginationLinks)) $paginationLinks[] = $current_page;
@@ -485,54 +504,64 @@ class CParMain
                     $crumbNodes = $xpath->query($data["crumb_selector"]);
                     foreach ($crumbNodes as $crumbNode) {
                         $crumb = $crumbNode->nodeValue;
-                        $crumbs[] = $crumb;
+                        $crumbs[] = trim($crumb);
                     }
                     $crumbs = array_slice($crumbs, $data["crumb_begin"], count($crumbs) - $data["crumb_end"]);
                 }
 
                 if ($data["title_selector"]) {
-                    $titleNode = $xpath->query($data["title_selector"])->item(0);
-                    if ($data["title_html_argument"]) {
-                        $title = trim($titleNode->getAttribute($data["title_html_argument"]));
-                    } else {
-                        $title = trim($titleNode->nodeValue);
+                    $titleNode = $xpath->query($data["title_selector"]);
+                    if ($titleNode->length > 0) {
+                        if ($data["title_html_argument"]) {
+                            $title = trim($titleNode->item(0)->getAttribute($data["title_html_argument"]));
+                        } else {
+                            $title = trim($titleNode->item(0)->nodeValue);
+                        }
                     }
                 }
 
                 if ($data["price_selector"]) {
-                    $priceNode = $xpath->query($data["price_selector"])->item(0);
-                    if ($data["price_html_argument"]) {
-                        $price = $clean_price($priceNode->getAttribute($data["price_html_argument"]));
-                    } else {
-                        $price = $clean_price($priceNode->nodeValue);
+                    $priceNode = $xpath->query($data["price_selector"]);
+                    if ($priceNode->length > 0) {
+                        if ($data["price_html_argument"]) {
+                            $price = $clean_price($priceNode->item(0)->getAttribute($data["price_html_argument"]));
+                        } else {
+                            $price = $clean_price($priceNode->item(0)->nodeValue);
+                        }
                     }
                 }
 
                 if ($data["unit_selector"]) {
                     if (!$data["unit_item"]) $data["unit_item"] = 0;
-                    $unitNode = $xpath->query($data["unit_selector"])->item($data["unit_item"]);
-                    if ($data["unit_html_argument"]) {
-                        $unit = $unitNode->getAttribute($data["unit_html_argument"]);
-                    } else {
-                        $unit = $unitNode->nodeValue;
+                    $unitNode = $xpath->query($data["unit_selector"]);
+                    if ($unitNode->length > 0) {
+                        if ($data["unit_html_argument"]) {
+                            $unit = $unitNode->item($data["unit_item"])->getAttribute($data["unit_html_argument"]);
+                        } else {
+                            $unit = $unitNode->item($data["unit_item"])->nodeValue;
+                        }
+                        if ($unit === "/шт" | $unit === "шт" |$unit === ".шт" | $unit === "штука" | $unit === "за штуку") $unit = "руб/шт";
                     }
-
-                    if ($unit === "/шт" | $unit === "шт" |$unit === ".шт" | $unit === "штука" | $unit === "за штуку") $unit = "руб/шт";
+                } else {
+                    $unit = "Руб/шт";
                 }
+
 
                 $images = [];
                 if ($data["one_image_selector"]) {
-                    $imageNode = $xpath->query($data["one_image_selector"])->item(0);
-                    if ($data["image_html_argument"]) {
-                        $image = $imageNode->getAttribute($data["image_html_argument"]);
-                    } else {
-                        $image = $imageNode->nodeValue;
-                    }
-                    if ($data["absolute_link"]) {
-                        $images[] = $image;
-                    } else {
-                        $images[] = $this->site_link . $image;
-                    }
+                    $imageNode = $xpath->query($data["one_image_selector"]);
+                    if ($imageNode->length > 0) {
+                        if ($data["image_html_argument"]) {
+                            $image = $imageNode->item(0)->getAttribute($data["image_html_argument"]);
+                        } else {
+                            $image = $imageNode->item(0)->nodeValue;
+                        }
+                        if ($data["absolute_link"]) {
+                            $images[] = $image;
+                        } else {
+                            $images[] = $this->site_link . $image;
+                        }
+                        }
                 }
 
                 if ($data["image_selector"]) {
@@ -553,15 +582,25 @@ class CParMain
 
                 if ($data["prop_selector"]) {
                     $props = [];
+                    $propNodes = $xpath->query($data["prop_selector"]);
+                    if ($data["lit_selector"]) {
+                        $litNodes = $xpath->query($data["lit_selector"]);
+                        for ($i = 0; $i < $litNodes->length; $i++) {
+                            $id = $i + 1;
+                            if ($data["absolute_link"]) {
+                                $props["Инструкция $id"] = $litNodes->item($i)->getAttribute("href");
+                            } else {
+                                $props["Инструкция $id"] = $this->site_link . $litNodes->item($i)->getAttribute("href");
+                            }
+                        }
+                    }
                     if ($data["prop_type"] === "mono") {
-                        $propNodes = $xpath->query($data["prop_selector"]);
                         for ($i = 0; $i < $propNodes->length; $i += 2) {
                             $prop_name = $propNodes->item($i);
                             $prop_value = $propNodes->item($i + 1);
                             $props[$prop_name] = $prop_value;
                         }
                     } elseif ($data["prop_type"] === "dual") {
-                        $propNodes = $xpath->query($data["prop_selector"]);
                         foreach ($propNodes as $propNode) {
                             $prop_name = $xpath->query($data["prop1"], $propNode);
                             $prop_value = $xpath->query($data["prop2"], $propNode);
@@ -572,11 +611,13 @@ class CParMain
                 }
 
                 if ($data["description_selector"]) {
-                    $descriptionNode = $xpath->query($data["description_selector"])->item(0);
-                    if ($data["title_html_argument"]) {
-                        $description = trim($descriptionNode->getAttribute($data["description_html_argument"]));
-                    } else {
-                        $description = trim($descriptionNode->nodeValue);
+                    $descriptionNode = $xpath->query($data["description_selector"]);
+                    if ($descriptionNode->length > 0) {
+                        if ($data["title_html_argument"]) {
+                            $description = trim($descriptionNode->item(0)->getAttribute($data["description_html_argument"]));
+                        } else {
+                            $description = trim($descriptionNode->item(0)->nodeValue);
+                        }
                     }
                 }
 
@@ -590,6 +631,13 @@ class CParMain
                     "link" => $key,
                     "unit" => $unit
                 ];
+
+                $this->itemCounter++;
+                if ($this->itemCounter >= $this->batchSize) {
+                    $this->saveBatchData($productsData);
+                    $productsData = [];
+                    $this->itemCounter = 0;
+                }
             }
 
             if (isset($data["big_data"]) ? $data["big_data"] : false) {
@@ -600,63 +648,69 @@ class CParMain
     }
 
     public function parseSave($productsData) {
+        $this->logMessage("🔄 Запуск обработки товаров...");
+
+        // 1. Объединение данных из временных JSON-файлов
+        $productsData = $this->mergeTemporaryFiles($productsData);
+
+        $this->logMessage("📦 Всего товаров после объединения: " . count($productsData));
+
+        // 2. Проверка использования памяти
+        $memoryUsage = memory_get_usage(true);
+        $memoryLimit = $this->parseMemoryLimit(ini_get('memory_limit'));
+        if ($memoryUsage > ($memoryLimit * 0.8)) {
+            $this->logMessage("⚠️ Память превышает 80% лимита (" . round($memoryUsage / 1024 / 1024) . "MB)");
+            if (function_exists('gc_collect_cycles')) {
+                gc_collect_cycles();
+            }
+        }
+
+        // 3. Подготовка структуры: заголовки и категории
         $propMap = include __DIR__ . '/prop_dictionary.php';
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $allPropKeys = [];
+        $groups = array();
+        $allPropKeys = array();
         $maxCrumbsCount = 0;
         $maxImagesCount = 0;
-        $groups = [];
 
         foreach ($productsData as $item) {
             $crumbKey = isset($item['crumbs'][0]) ? $item['crumbs'][0] : 'Без категории';
             $groups[$crumbKey][] = $item;
-            $groupPropKeys = [];
-            $maxGroupCrumbs = 0;
-            $maxGroupImages = 0;
 
-            if (isset($item['crumbs'])) {
-                $maxCrumbsCount = max($maxCrumbsCount, count((array)$item['crumbs']));
-            }
-
-            if (isset($item['images'])) {
-                $maxImagesCount = max($maxImagesCount, count((array)$item['images']));
-            }
+            $maxCrumbsCount = max($maxCrumbsCount, isset($item['crumbs']) ? count($item['crumbs']) : 0);
+            $maxImagesCount = max($maxImagesCount, isset($item['images']) ? count($item['images']) : 0);
 
             if (isset($item['props']) && is_array($item['props'])) {
                 foreach ($item['props'] as $key => $val) {
                     $keyNorm = $this->normalizeKey($key);
                     $normKey = isset($propMap[$keyNorm]) ? $propMap[$keyNorm] : ucfirst($keyNorm);
-
-                    // Сюда кладём всё, КРОМЕ длины/ширины/высоты и всех сопоставленных им синонимов
-                    if (!in_array($normKey, ['Габариты', 'Длина', 'Ширина', 'Высота'])) {
+                    if (!in_array($normKey, array('Габариты','Длина','Ширина','Высота'))) {
                         $allPropKeys[$normKey] = true;
                     }
                 }
             }
-            // Явно всегда ДОБАВЬ Габариты (иначе её не будет в propKeys)
             $allPropKeys['Габариты'] = true;
         }
+
         $propKeys = array_keys($allPropKeys);
         sort($propKeys);
 
-
-        $headers = [];
+        // 4. Заголовки
+        $headers = array();
         for ($i = 1; $i <= $maxCrumbsCount; $i++) $headers[] = "Крошка {$i}";
-        $headers[] = 'Ссылка';
-        $headers[] = 'Название';
-        $headers[] = 'Цена';
-        $headers[] = 'Ед. изм.';
+        $headers = array_merge($headers, array('Ссылка', 'Название', 'Цена', 'Ед. изм.'));
         for ($i = 1; $i <= $maxImagesCount; $i++) $headers[] = "Изображение {$i}";
-        foreach ($propKeys as $k) $headers[] = $k;
+        $headers = array_merge($headers, $propKeys);
         $headers[] = 'Описание';
 
-        // 🟩 1. Лист "Все товары"
+        // 5. Общий лист
+        $this->logMessage("📝 Сохраняем лист «Все товары» на " . count($productsData) . " строк");
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Все товары');
 
-        $colIndex = 1;
-        foreach ($headers as $header) {
-            $sheet->setCellValueByColumnAndRow($colIndex++, 1, $header);
+        $col = 1;
+        foreach ($headers as $h) {
+            $sheet->setCellValueByColumnAndRow($col++, 1, $h);
         }
 
         $rowNum = 2;
@@ -664,74 +718,176 @@ class CParMain
             $this->writeRow($sheet, $item, $propMap, $propKeys, $maxCrumbsCount, $maxImagesCount, $rowNum++);
         }
 
-        // 🟦 2. Листы по категориям (crumb1)
-        $sheetIndex = 1;
+        // 6. Группированные листы
+        $this->logMessage("🔖 Группировка по категориям: " . count($groups));
         foreach ($groups as $crumbKey => $items) {
-            $sheet = $spreadsheet->createSheet();
-            $sheet->setTitle(mb_substr($crumbKey, 0, 31));
+            $this->logMessage("📥 Обработка категории «{$crumbKey}»: " . count($items) . " товаров");
 
-            $groupPropKeys = [];
+            $sheet = $spreadsheet->createSheet();
+            $sheet->setTitle(mb_substr($crumbKey, 0, 31)); // ограничение Excel
+
+            $groupPropKeys = array();
             $maxGroupCrumbs = 0;
             $maxGroupImages = 0;
 
             foreach ($items as $item) {
-                if (isset($item['crumbs'])) {
-                    $maxGroupCrumbs = max($maxGroupCrumbs, count((array)$item['crumbs']));
-                }
-                if (isset($item['images'])) {
-                    $maxGroupImages = max($maxGroupImages, count((array)$item['images']));
-                }
+                $maxGroupCrumbs = max($maxGroupCrumbs, isset($item['crumbs']) ? count($item['crumbs']) : 0);
+                $maxGroupImages = max($maxGroupImages, isset($item['images']) ? count($item['images']) : 0);
+
                 if (isset($item['props']) && is_array($item['props'])) {
                     foreach ($item['props'] as $key => $val) {
                         $keyNorm = $this->normalizeKey($key);
                         $normKey = isset($propMap[$keyNorm]) ? $propMap[$keyNorm] : ucfirst($keyNorm);
-                        // Не добавлять длина/ширина/высота, только собственно характеристики
-                        if (!in_array($normKey, ['Габариты', 'Длина', 'Ширина', 'Высота'])) {
+                        if (!in_array($normKey, array('Габариты','Длина','Ширина','Высота'))) {
                             $groupPropKeys[$normKey] = true;
                         }
                     }
                 }
-                // Явно всегда добавлять "Габариты"
                 $groupPropKeys['Габариты'] = true;
             }
+
             $propKeysLocal = array_keys($groupPropKeys);
             sort($propKeysLocal);
 
-            // Собираем заголовки для этой категории
-            $headersLocal = [];
+            $headersLocal = array();
             for ($i = 1; $i <= $maxGroupCrumbs; $i++) $headersLocal[] = "Крошка {$i}";
-            $headersLocal[] = 'Ссылка';
-            $headersLocal[] = 'Название';
-            $headersLocal[] = 'Цена';
-            $headersLocal[] = 'Ед. изм.';
+            $headersLocal = array_merge($headersLocal, array('Ссылка', 'Название', 'Цена', 'Ед. изм.'));
             for ($i = 1; $i <= $maxGroupImages; $i++) $headersLocal[] = "Изображение {$i}";
-            foreach ($propKeysLocal as $k) $headersLocal[] = $k;
+            $headersLocal = array_merge($headersLocal, $propKeysLocal);
             $headersLocal[] = 'Описание';
 
-            // Создаём лист и пишем хэдеры
-            $colIndex = 1;
-            foreach ($headersLocal as $header) {
-                $sheet->setCellValueByColumnAndRow($colIndex++, 1, $header);
+            $col = 1;
+            foreach ($headersLocal as $h) {
+                $sheet->setCellValueByColumnAndRow($col++, 1, $h);
             }
 
-            // Запись товаров группы
             $rowNum = 2;
             foreach ($items as $item) {
                 $this->writeRow($sheet, $item, $propMap, $propKeysLocal, $maxGroupCrumbs, $maxGroupImages, $rowNum++);
             }
+
+            gc_collect_cycles();
         }
 
-        $writer = new Xlsx($spreadsheet);
+        // 7. Сохранение файла
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         $fileName = get_class($this) . '_' . date('Ymd_His') . '.xlsx';
         $writer->save($fileName);
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
 
+        // 8. Финальная статистика
         $minutes = floor($this->parse_time / 60);
         $seconds = $this->parse_time % 60;
-        $peakMemory = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
-        $this->logMessage("Пиковое использование: {$peakMemory}MB.");
-        $this->logMessage("Время выполнения: {$minutes} мин, " . round($seconds, 2) . " сек");
-        $this->logMessage("Файл сохранен: {$fileName}");
+        $peakMem = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
+
+        $this->logMessage("💾 Excel-файл завершён: $fileName");
+        $this->logMessage("📊 Категорий: " . count($groups));
+        $this->logMessage("🧠 Пиковое использование памяти: {$peakMem}MB");
+        $this->logMessage("⏱ Время: {$minutes} мин " . round($seconds, 1) . " сек");
     }
+
+
+    private function parseMemoryLimit($val) {
+        $val = trim($val);
+        if ($val === '' || $val == -1) {
+            return PHP_INT_MAX; // Безлимитная память
+        }
+        $last = strtolower($val[strlen($val)-1]);
+        $num = (int)$val;
+        switch($last) {
+            case 'g':
+                $num *= 1024;
+            // break; специально нет, идём далее
+            case 'm':
+                $num *= 1024;
+            // break;
+            case 'k':
+                $num *= 1024;
+            // break;
+        }
+        return $num;
+    }
+
+    private function saveBatchData($data) {
+        if (empty($data)) {
+            $this->logMessage("⏭️ Пропущен пустой пакет.");
+            return;
+        }
+
+        $tempFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $this->tempFilePrefix . uniqid() . '.json';
+        $this->tempFiles[] = $tempFile;
+
+        $json = json_encode($data, JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            $this->logMessage("❌ JSON ошибка: " . json_last_error_msg());
+            return;
+        }
+
+        if (file_put_contents($tempFile, $json) === false) {
+            $this->logMessage("❌ Ошибка записи: " . basename($tempFile));
+            return;
+        }
+
+        $this->logMessage("✅ Сохраняю пакет из " . count($data) . " позиций в " . basename($tempFile));
+
+        unset($data, $json);
+        if (function_exists('gc_collect_cycles')) gc_collect_cycles();
+    }
+
+    private function mergeTemporaryFiles($finalData) {
+        if (empty($this->tempFiles)) {
+            $this->logMessage("ℹ️ Нет временных файлов для объединения.");
+            return $finalData;
+        }
+
+        $this->logMessage("📦 Объединяем " . count($this->tempFiles) . " временных файла(ов)...");
+        $merged = 0;
+
+        foreach ($this->tempFiles as $tempFile) {
+            if (!file_exists($tempFile)) continue;
+
+            $json = file_get_contents($tempFile);
+            if ($json === false) {
+                $this->logMessage("⚠️ Не могу прочесть файл " . basename($tempFile));
+                continue;
+            }
+
+            $data = json_decode($json, true);
+            if (!is_array($data)) {
+                $this->logMessage("⚠️ Ошибка JSON декодирования: " . basename($tempFile));
+                continue;
+            }
+
+            $merged += count($data);
+            $finalData = array_merge($finalData, $data);
+            $this->logMessage("➕ Объединено " . count($data) . " из " . basename($tempFile));
+
+            unlink($tempFile);
+        }
+
+        $this->tempFiles = [];
+        $this->logMessage("✅ Итоговое количество объединённых записей: $merged");
+
+        return $finalData;
+    }
+
+    private function cleanupTemporaryFiles() {
+        $deleted = 0;
+        foreach ($this->tempFiles as $tempFile) {
+            if (is_file($tempFile)) {
+                @unlink($tempFile);
+                $deleted++;
+            }
+        }
+        $this->tempFiles = [];
+        $this->logMessage("🧹 Удалено временных файлов: $deleted");
+    }
+
+    public function __destruct() {
+        $this->cleanupTemporaryFiles();
+    }
+
 
     # Доп ф-ции
     protected function writeRow($sheet, $item, $propMap, $propKeys, $localMaxCrumbs, $localMaxImages, $rowNum) {

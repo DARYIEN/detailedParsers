@@ -1,16 +1,18 @@
 <?php
+
+
 const ROOT = __DIR__;
 include_once(ROOT . '/../../utility/class.CParMain.php');
 ini_set('error_reporting', E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED & ~E_STRICT);
 ini_set('display_errors', 1);
-class CParSortMet extends CParMain {
+class CParDevilBiss extends CParMain {
     static $name_parser = array(
-        "SortMet" => "СортМет"
+        "DevilBiss" => "ДевилБисс"
     );
     function __construct() {
         $this->dual_cost = false;
         $this->decimal = false;
-        $this->site_link = "https://sortmet.ru";
+        $this->site_link = "https://devilbiss-rus.ru";
         $this->author = "Никита";
         $this->batches = 30;
     }
@@ -25,7 +27,7 @@ class CParSortMet extends CParMain {
         $data = [
             "title" => "Категории",
             "log" => "ссылок на категории",
-            "category_selector" => '//div[@class="rownew"]/div//a[@class="state_category"]/@href',
+            "category_selector" => '//ul[@id="vertical-multilevel-menu"]/li/a/@href',
             "absolute_link" => false
         ];
         $this->productCount = $this->gettingUrls($url, $data);
@@ -33,25 +35,11 @@ class CParSortMet extends CParMain {
         #$this->productCount = array_slice($this->productCount, 0, 1);
         $this->logMessage("Найдено " . count($this->productCount) . " категорий.");
 
-        $this->logMessage("Пагинация ссылок...");
-        $data = [
-            "title" => "Пагинация",
-            "log" => "пагинации",
-            "paginate_selector" => '//div[@class="pagination pagination_center"]/a',
-            "last_button_id" => 1,
-            "url_argument" => "?PAGEN_3=",
-            "html_argument" => "href=",
-
-        ];
-        $this->productCount = $this->gettingUrls($this->productCount, $data, true);
-        #$this->productCount = array_slice($this->productCount, 0, 2);
-        $this->logMessage("Получено " . count($this->productCount) . " ссылок на страницы с товарами.");
-
 
         $data = [
             "title" => "Ссылки на товары",
             "log" => "ссылок на товары",
-            "title_selector" => ['//div[@class="catalog-section__list-inner bx-red"]/div//a[@class="card-line__name"]'],
+            "title_selector" => ['//div[@class="wrap_product_block ourMain"]/div//div[@class="product_block_info"]/a'],
             "absolute_link" => false,
             "big_data" => true
         ];
@@ -64,23 +52,25 @@ class CParSortMet extends CParMain {
         $data = [
             "title" => "Товары одноразовый",
             "log" => "cсылок на товары",
-            "crumb_selector" => '//ul[@class="breadcrumbs"]/li/a/span',
-            "crumb_begin" => 2,
-            "crumb_end" => 3,
-            "title_selector" => '//h1[@class="catalog-element__content-heading"]',
-            "price_selector" => '//div[@class="price-current-list"]/div/span[1]',
-            "unit_selector" => '//div[@class="price-current-list"]/div/span[2]',
+            "crumb_selector" => '//div[@class="breadcrumbs"]//li/a/span',
+            "crumb_begin" => 1,
+            "crumb_end" => 1,
+            "title_selector" => '//h1[@class="text_big_part_name name_choose_product_item"]',
+            "price_selector" => '//span[@id="itemPrice"]',
+            "price_html_argument" => 'content',
+            "unit_selector" => '',
 
-            "image_selector" => '//div[@class="catalog-element__top"]//div[@id="element-slider"]//div[@class="swiper-wrapper"]/div/span/img',
+            "image_selector" => '//div[@class="selected_popup_mini_photo_wrap"]/div/img',
             "image_html_argument" => "src",
             "absolute_link" => false,
 
+            "lit_selector" => '//div[@class="menu_info_content_special_feature"]/a[1]',
             "prop_type" => "dual",
-            "prop_selector" => '//div[@class="catalog-element__characteristics-block characteristics-second"]/div',
-            "prop1" => './/div',
-            "prop2" => './/a',
+            "prop_selector" => '//div[@class="menu_info_content_special_feature"]//tr',
+            "prop1" => './/td[1]',
+            "prop2" => './/td[2]',
 
-            "description_selector" => '//div[@class="catalog-element__desctiption-text"]/p',
+            "description_selector" => '//div[@class="menu_info_content_special_feature"]/p | //div[@class="menu_info_content_special_feature"]//li',
         ];
         $this->batchSize = 4000;
         $productsData = $this->gettingUrls($this->productCount, $data, true);
@@ -90,5 +80,5 @@ class CParSortMet extends CParMain {
         $this->parseSave($productsData);
     }
 }
-$parser = new CParSortMet();
+$parser = new CParDevilBiss();
 $parser->processParsing();
