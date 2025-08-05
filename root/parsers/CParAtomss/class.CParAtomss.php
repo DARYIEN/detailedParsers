@@ -45,7 +45,7 @@ class CParAtomss extends CParMain {
         ];
         $underCat = $this->gettingUrls($this->productCount, $data);
 
-        $underCat = array_slice($underCat, 0, 1);
+        #$underCat = array_slice($underCat, 0, 1);
         $this->logMessage("Найдено " . count($underCat) . " подкатегорий.");
 
 

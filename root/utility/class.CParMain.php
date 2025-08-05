@@ -609,14 +609,16 @@ class CParMain
                         }
                     }
                 }
-
+                $description = '';
                 if ($data["description_selector"]) {
-                    $descriptionNode = $xpath->query($data["description_selector"]);
-                    if ($descriptionNode->length > 0) {
-                        if ($data["title_html_argument"]) {
-                            $description = trim($descriptionNode->item(0)->getAttribute($data["description_html_argument"]));
-                        } else {
-                            $description = trim($descriptionNode->item(0)->nodeValue);
+                    $descriptionNodes = $xpath->query($data["description_selector"]);
+                    if ($descriptionNodes->length > 0) {
+                        foreach ($descriptionNodes as $descriptionNode) {
+                            if ($data["title_html_argument"]) {
+                                $description = $description . trim($descriptionNode->getAttribute($data["description_html_argument"]));
+                            } else {
+                                $description = $description . trim($descriptionNode->nodeValue);
+                            }
                         }
                     }
                 }
@@ -650,24 +652,21 @@ class CParMain
     public function parseSave($productsData) {
         $this->logMessage("🔄 Запуск обработки товаров...");
 
-        // 1. Объединение данных из временных JSON-файлов
+        // 1. Объединение батчей из JSON
         $productsData = $this->mergeTemporaryFiles($productsData);
-
+        $this->cleanupTemporaryFiles();
         $this->logMessage("📦 Всего товаров после объединения: " . count($productsData));
 
-        // 2. Проверка использования памяти
+        // 2. Проверь использование памяти
         $memoryUsage = memory_get_usage(true);
         $memoryLimit = $this->parseMemoryLimit(ini_get('memory_limit'));
         if ($memoryUsage > ($memoryLimit * 0.8)) {
             $this->logMessage("⚠️ Память превышает 80% лимита (" . round($memoryUsage / 1024 / 1024) . "MB)");
-            if (function_exists('gc_collect_cycles')) {
-                gc_collect_cycles();
-            }
+            if (function_exists('gc_collect_cycles')) gc_collect_cycles();
         }
 
-        // 3. Подготовка структуры: заголовки и категории
+        // 3. Подготовка структуры, группировка по первой крошке
         $propMap = include __DIR__ . '/prop_dictionary.php';
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $groups = array();
         $allPropKeys = array();
         $maxCrumbsCount = 0;
@@ -676,10 +675,8 @@ class CParMain
         foreach ($productsData as $item) {
             $crumbKey = isset($item['crumbs'][0]) ? $item['crumbs'][0] : 'Без категории';
             $groups[$crumbKey][] = $item;
-
             $maxCrumbsCount = max($maxCrumbsCount, isset($item['crumbs']) ? count($item['crumbs']) : 0);
             $maxImagesCount = max($maxImagesCount, isset($item['images']) ? count($item['images']) : 0);
-
             if (isset($item['props']) && is_array($item['props'])) {
                 foreach ($item['props'] as $key => $val) {
                     $keyNorm = $this->normalizeKey($key);
@@ -691,120 +688,227 @@ class CParMain
             }
             $allPropKeys['Габариты'] = true;
         }
-
         $propKeys = array_keys($allPropKeys);
         sort($propKeys);
 
-        // 4. Заголовки
+        // 4. Формируем headers
         $headers = array();
         for ($i = 1; $i <= $maxCrumbsCount; $i++) $headers[] = "Крошка {$i}";
-        $headers = array_merge($headers, array('Ссылка', 'Название', 'Цена', 'Ед. изм.'));
+        $headers = array_merge($headers, ['Ссылка', 'Название', 'Цена', 'Ед. изм.']);
         for ($i = 1; $i <= $maxImagesCount; $i++) $headers[] = "Изображение {$i}";
         $headers = array_merge($headers, $propKeys);
         $headers[] = 'Описание';
 
-        // 5. Общий лист
-        $this->logMessage("📝 Сохраняем лист «Все товары» на " . count($productsData) . " строк");
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Все товары');
 
+        $dir = dirname((new \ReflectionClass($this))->getFileName());
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+
+        $csvFile = $dir . DIRECTORY_SEPARATOR . get_class($this) . '_' . date('Ymd_His') . '.csv';
+        $this->saveProductsToCsv($csvFile, $productsData, $headers, $propMap, $maxCrumbsCount, $maxImagesCount);
+
+        // 5. Лист «Все товары»
+        $sheetAll = $spreadsheet->getActiveSheet();
+        $sheetAll->setTitle('Все товары');
+
+        // Заголовки
         $col = 1;
         foreach ($headers as $h) {
-            $sheet->setCellValueByColumnAndRow($col++, 1, $h);
+            $sheetAll->setCellValueByColumnAndRow($col++, 1, $h);
         }
 
+        // Запись всех товаров с логами каждые 1000 строк
         $rowNum = 2;
         foreach ($productsData as $item) {
-            $this->writeRow($sheet, $item, $propMap, $propKeys, $maxCrumbsCount, $maxImagesCount, $rowNum++);
+            $row = $this->flattenProductRow($item, $headers, $propMap, $maxCrumbsCount, $maxImagesCount);
+            $col = 1;
+            foreach ($row as $val) {
+                $sheetAll->setCellValueByColumnAndRow($col++, $rowNum, $val);
+            }
+            if (($rowNum - 1) % 1000 == 0) {
+                $this->logMessage("Все товары: записано " . ($rowNum - 1) . " строк...");
+            }
+            $rowNum++;
         }
+        $this->logMessage("✅ Лист «Все товары» записан строк: " . ($rowNum - 2));
 
-        // 6. Группированные листы
-        $this->logMessage("🔖 Группировка по категориям: " . count($groups));
-        foreach ($groups as $crumbKey => $items) {
-            $this->logMessage("📥 Обработка категории «{$crumbKey}»: " . count($items) . " товаров");
-
+        // 6. Листы по категориям
+        foreach ($groups as $cat => $items) {
+            $safeTitle = $this->sanitizeSheetTitle($cat);
             $sheet = $spreadsheet->createSheet();
-            $sheet->setTitle(mb_substr($crumbKey, 0, 31)); // ограничение Excel
+            $sheet->setTitle($safeTitle);
 
-            $groupPropKeys = array();
+            // Локальные пропсы
+            $groupPropKeys = [];
             $maxGroupCrumbs = 0;
             $maxGroupImages = 0;
-
             foreach ($items as $item) {
                 $maxGroupCrumbs = max($maxGroupCrumbs, isset($item['crumbs']) ? count($item['crumbs']) : 0);
                 $maxGroupImages = max($maxGroupImages, isset($item['images']) ? count($item['images']) : 0);
-
                 if (isset($item['props']) && is_array($item['props'])) {
                     foreach ($item['props'] as $key => $val) {
                         $keyNorm = $this->normalizeKey($key);
                         $normKey = isset($propMap[$keyNorm]) ? $propMap[$keyNorm] : ucfirst($keyNorm);
-                        if (!in_array($normKey, array('Габариты','Длина','Ширина','Высота'))) {
+                        if (!in_array($normKey, ['Габариты','Длина','Ширина','Высота'])) {
                             $groupPropKeys[$normKey] = true;
                         }
                     }
                 }
                 $groupPropKeys['Габариты'] = true;
             }
-
             $propKeysLocal = array_keys($groupPropKeys);
             sort($propKeysLocal);
 
-            $headersLocal = array();
+            $headersLocal = [];
             for ($i = 1; $i <= $maxGroupCrumbs; $i++) $headersLocal[] = "Крошка {$i}";
-            $headersLocal = array_merge($headersLocal, array('Ссылка', 'Название', 'Цена', 'Ед. изм.'));
+            $headersLocal = array_merge($headersLocal, ['Ссылка', 'Название', 'Цена', 'Ед. изм.']);
             for ($i = 1; $i <= $maxGroupImages; $i++) $headersLocal[] = "Изображение {$i}";
             $headersLocal = array_merge($headersLocal, $propKeysLocal);
             $headersLocal[] = 'Описание';
 
+            // Записать заголовки
             $col = 1;
             foreach ($headersLocal as $h) {
                 $sheet->setCellValueByColumnAndRow($col++, 1, $h);
             }
 
+            // Записать товары с логами по 1000 строк
             $rowNum = 2;
             foreach ($items as $item) {
-                $this->writeRow($sheet, $item, $propMap, $propKeysLocal, $maxGroupCrumbs, $maxGroupImages, $rowNum++);
+                $row = $this->flattenProductRow($item, $headersLocal, $propMap, $maxGroupCrumbs, $maxGroupImages);
+                $col = 1;
+                foreach ($row as $val) {
+                    $sheet->setCellValueByColumnAndRow($col++, $rowNum, $val);
+                }
+                if (($rowNum - 1) % 1000 == 0) {
+                    $this->logMessage("Категория '{$safeTitle}': записано " . ($rowNum - 1) . " строк...");
+                }
+                $rowNum++;
             }
-
-            gc_collect_cycles();
+            $this->logMessage("✅ Лист «{$safeTitle}» записан строк: " . ($rowNum - 2));
         }
 
-        // 7. Сохранение файла
+        // 7. Сохраняем XLSX в папку класса
+        $fileName = $dir . DIRECTORY_SEPARATOR . get_class($this) . '_' . date('Ymd_His') . '_full.xlsx';
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $fileName = get_class($this) . '_' . date('Ymd_His') . '.xlsx';
         $writer->save($fileName);
         $spreadsheet->disconnectWorksheets();
         unset($spreadsheet);
 
-        // 8. Финальная статистика
-        $minutes = floor($this->parse_time / 60);
-        $seconds = $this->parse_time % 60;
-        $peakMem = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
-
-        $this->logMessage("💾 Excel-файл завершён: $fileName");
-        $this->logMessage("📊 Категорий: " . count($groups));
-        $this->logMessage("🧠 Пиковое использование памяти: {$peakMem}MB");
-        $this->logMessage("⏱ Время: {$minutes} мин " . round($seconds, 1) . " сек");
+        $this->logMessage("💾 Итоговый XLSX сохранён: $fileName");
     }
 
+    private function saveProductsToCsv($filePath, $productsData, $headers, $propMap, $maxCrumbsCount, $maxImagesCount)
+    {
+        $fp = fopen($filePath, 'w');
+        fwrite($fp, "\xEF\xBB\xBF"); // BOM UTF-8
+
+        fputcsv($fp, $headers, ';');
+
+        $rowNum = 1;
+        foreach ($productsData as $item) {
+            $row = $this->flattenProductRow($item, $headers, $propMap, $maxCrumbsCount, $maxImagesCount);
+            fputcsv($fp, $row, ';');
+            if (($rowNum) % 1000 === 0) {
+                $this->logMessage("CSV: записано {$rowNum} строк...");
+            }
+            $rowNum++;
+        }
+        fclose($fp);
+        $this->logMessage("✅ CSV сохранён: $filePath. Всего строк: " . ($rowNum - 1));
+    }
+
+    private function flattenProductRow($item, $headers, $propMap, $maxCrumbs, $maxImages) {
+        // Продвинутая логика габаритов + остальные свойства
+        $length = $width = $height = '';
+        $unit = '';
+        $dimensionsCombined = '';
+        $normalizedProps = [];
+
+        if (!empty($item['props']) && is_array($item['props'])) {
+            foreach ($item['props'] as $key => $value) {
+                $keyNorm = $this->normalizeKey($key);
+                $normKey = isset($propMap[$keyNorm]) ? $propMap[$keyNorm] : ucfirst($keyNorm);
+
+                if (mb_strtolower($normKey) === 'габариты') {
+                    $clean = preg_replace('/\s*/u', '', str_replace(['×', 'х', '*', 'X'], 'x', $value));
+                    if (preg_match('/^(\d+x\d+x\d+)([^\dx]+)?$/u', $clean, $m)) {
+                        $dimensionsCombined = $m[1] . (isset($m[2]) ? ' ' . trim($m[2]) : '');
+                        continue;
+                    }
+                }
+                if ($normKey === 'длина') {
+                    list($length, $unit) = $this->parseNumberAndUnit($value);
+                } elseif ($normKey === 'ширина') {
+                    list($width, $unit) = $this->parseNumberAndUnit($value);
+                } elseif ($normKey === 'высота') {
+                    list($height, $unit) = $this->parseNumberAndUnit($value);
+                } else {
+                    $normalizedProps[$normKey] = isset($normalizedProps[$normKey])
+                        ? $normalizedProps[$normKey] . '; ' . $value
+                        : $value;
+                }
+            }
+        }
+
+        if (!empty($dimensionsCombined)) {
+            $normalizedProps['Габариты'] = $dimensionsCombined;
+        } else {
+            $l = $length !== '' ? $length : '-';
+            $w = $width !== '' ? $width : '-';
+            $h = $height !== '' ? $height : '-';
+            $unitSuffix = $unit !== '' ? " $unit" : '';
+            $normalizedProps['Габариты'] = "{$l}x{$w}x{$h}{$unitSuffix}";
+        }
+
+        // Формируем строку для CSV/XLSX
+        $row = [];
+        for ($i = 0; $i < $maxCrumbs; $i++) {
+            $row[] = isset($item['crumbs'][$i]) ? $item['crumbs'][$i] : '';
+        }
+        $row[] = isset($item['link']) ? $item['link'] : '';
+        $row[] = isset($item['name']) ? $item['name'] : '';
+        $row[] = isset($item['price']) ? $item['price'] : '';
+        $row[] = isset($item['unit']) ? $item['unit'] : '';
+        for ($i = 0; $i < $maxImages; $i++) {
+            $row[] = isset($item['images'][$i]) ? $item['images'][$i] : '';
+        }
+
+        foreach ($headers as $header) {
+            if (!in_array($header, ['Ссылка', 'Название', 'Цена', 'Ед. изм.']) &&
+                strpos($header, 'Крошка') === false &&
+                strpos($header, 'Изображение') === false &&
+                $header !== 'Описание') {
+                $row[] = isset($normalizedProps[$header]) ? $normalizedProps[$header] : '';
+            }
+        }
+        $row[] = isset($item['description']) ? $item['description'] : '';
+
+        return $row;
+    }
+
+// Дополнительные вспомогательные методы
+
+    private function sanitizeSheetTitle($title) {
+        $title = preg_replace('/[\\\\\\/\\?\\*\\[\\]\\:]/u', '', $title);
+        return mb_substr($title, 0, 31);
+    }
 
     private function parseMemoryLimit($val) {
         $val = trim($val);
         if ($val === '' || $val == -1) {
-            return PHP_INT_MAX; // Безлимитная память
+            return PHP_INT_MAX; // Безлимит
         }
         $last = strtolower($val[strlen($val)-1]);
         $num = (int)$val;
-        switch($last) {
+        switch ($last) {
             case 'g':
                 $num *= 1024;
-            // break; специально нет, идём далее
+            // no break
             case 'm':
                 $num *= 1024;
-            // break;
+            // no break
             case 'k':
                 $num *= 1024;
-            // break;
         }
         return $num;
     }
@@ -883,103 +987,6 @@ class CParMain
         $this->tempFiles = [];
         $this->logMessage("🧹 Удалено временных файлов: $deleted");
     }
-
-    public function __destruct() {
-        $this->cleanupTemporaryFiles();
-    }
-
-
-    # Доп ф-ции
-    protected function writeRow($sheet, $item, $propMap, $propKeys, $localMaxCrumbs, $localMaxImages, $rowNum) {
-        $colIndex = 1;
-
-        // Крошки (используем локальный максимум)
-        for ($i = 0; $i < $localMaxCrumbs; $i++) {
-            $sheet->setCellValueByColumnAndRow($colIndex++, $rowNum, isset($item['crumbs'][$i]) ? $item['crumbs'][$i] : '');
-        }
-
-        // Основные данные
-        $sheet->setCellValueByColumnAndRow($colIndex++, $rowNum, isset($item['link']) ? $item['link'] : '');
-        $sheet->setCellValueByColumnAndRow($colIndex++, $rowNum, isset($item['name']) ? $item['name'] : '');
-        $sheet->setCellValueByColumnAndRow($colIndex++, $rowNum, isset($item['price']) ? $item['price'] : '');
-        $sheet->setCellValueByColumnAndRow($colIndex++, $rowNum, isset($item['unit']) ? $item['unit'] : '');
-
-        // Изображения (используем локальный максимум)
-        for ($i = 0; $i < $localMaxImages; $i++) {
-            $sheet->setCellValueByColumnAndRow(
-                $colIndex++, $rowNum,
-                isset($item['images'][$i]) ? $item['images'][$i] : ''
-            );
-        }
-
-        // Обработка props
-        $length = $width = $height = '';
-        $unit = '';
-        $dimensionsCombined = '';
-        $normalizedProps = [];
-
-        if (!empty($item['props']) && is_array($item['props'])) {
-            foreach ($item['props'] as $key => $value) {
-                $value = trim($value);
-                $keyNorm = $this->normalizeKey($key);
-                $normKey = isset($propMap[$keyNorm]) ? $propMap[$keyNorm] : ucfirst($keyNorm);
-
-                // 1. Готовые габариты
-                if (mb_strtolower($normKey) === 'габариты') {
-                    $clean = preg_replace('/\s*/u', '', str_replace(['×','х','*','X'], 'x', $value));
-                    if (preg_match('/^(\d+x\d+x\d+)([^\dx]+)?$/u', $clean, $m)) {
-                        $dimensionsCombined = $m[1] . (isset($m[2]) ? ' ' . trim($m[2]) : '');
-                        continue;
-                    }
-                }
-
-                // 2. Отдельные длина/ширина/высота
-                if ($normKey === 'Длина') {
-                    list($length, $unit) = $this->parseNumberAndUnit($value);
-                } elseif ($normKey === 'Ширина') {
-                    list($width, $unit) = $this->parseNumberAndUnit($value);
-                } elseif ($normKey === 'Высота') {
-                    list($height, $unit) = $this->parseNumberAndUnit($value);
-                } elseif (!in_array($normKey, ['Габариты','Длина','Ширина','Высота'])) {
-                    $normalizedProps[$normKey] = isset($normalizedProps[$normKey])
-                        ? $normalizedProps[$normKey] . '; ' . $value
-                        : $value;
-                }
-            }
-
-            // Сбор итоговых габаритов
-            if (!empty($dimensionsCombined)) {
-                $normalizedProps['Габариты'] = $dimensionsCombined;
-            } else {
-                $l = ($length !== '') ? $length : '-';
-                $w = ($width  !== '') ? $width  : '-';
-                $h = ($height !== '') ? $height : '-';
-                $unitSuffix = ($unit !== '') ? " $unit" : '';
-                $normalizedProps['Габариты'] = "{$l}x{$w}x{$h}{$unitSuffix}";
-            }
-        }
-
-        // Фильтрация: оставляем только ключи текущего листа
-        $normalizedProps = array_intersect_key(
-            $normalizedProps,
-            array_flip($propKeys)
-        );
-
-        // Запись характеристик (по локальному списку)
-        foreach ($propKeys as $propKey) {
-            $sheet->setCellValueByColumnAndRow(
-                $colIndex++, $rowNum,
-                isset($normalizedProps[$propKey]) ? $normalizedProps[$propKey] : ''
-            );
-        }
-
-        // Описание
-        $sheet->setCellValueByColumnAndRow(
-            $colIndex++, $rowNum,
-            isset($item['description']) ? $item['description'] : ''
-        );
-    }
-
 
     protected function normalizeKey($key) {
         $key = str_replace(["\xC2\xA0", "\xE2\x80\x89", "\xE2\x80\xAF", ' '], ' ', $key);

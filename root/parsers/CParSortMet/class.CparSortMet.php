@@ -30,7 +30,7 @@ class CParSortMet extends CParMain {
         ];
         $this->productCount = $this->gettingUrls($url, $data);
 
-        #$this->productCount = array_slice($this->productCount, 0, 1);
+        $this->productCount = array_slice($this->productCount, 0, 1);
         $this->logMessage("Найдено " . count($this->productCount) . " категорий.");
 
         $this->logMessage("Пагинация ссылок...");
