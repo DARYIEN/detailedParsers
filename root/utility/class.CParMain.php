@@ -817,7 +817,7 @@ class CParMain
         $this->logMessage("✅ CSV сохранён: $filePath. Всего строк: " . ($rowNum - 1));
     }
 
-    private function flattenProductRow($item, $headers, $propMap, $maxCrumbs, $maxImages) {
+    public function flattenProductRow($item, $headers, $propMap, $maxCrumbs, $maxImages) {
         // Продвинутая логика габаритов + остальные свойства
         $length = $width = $height = '';
         $unit = '';
@@ -888,7 +888,7 @@ class CParMain
 
 // Дополнительные вспомогательные методы
 
-    private function sanitizeSheetTitle($title) {
+    public function sanitizeSheetTitle($title) {
         $title = preg_replace('/[\\\\\\/\\?\\*\\[\\]\\:]/u', '', $title);
         return mb_substr($title, 0, 31);
     }
@@ -988,7 +988,7 @@ class CParMain
         $this->logMessage("🧹 Удалено временных файлов: $deleted");
     }
 
-    protected function normalizeKey($key) {
+    public function normalizeKey($key) {
         $key = str_replace(["\xC2\xA0", "\xE2\x80\x89", "\xE2\x80\xAF", ' '], ' ', $key);
         $key = preg_replace('/\s+/u', ' ', $key);
         $key = str_replace([':', ';', '–', '.', ','], '', $key);

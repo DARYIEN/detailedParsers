@@ -88,7 +88,7 @@ class CparKrasimPravilno extends CParMain {
             "prop1" => './/span[1]',
             "prop2" => './/span[2]',
 
-            "description_selector" => '//div[@id="product_description"]/p/text()',
+            "description_selector" => '//div[@id="product_description"]',
         ];
         $this->batchSize = 4000;
         $productsData = $this->gettingUrls($this->productCount, $data, true);

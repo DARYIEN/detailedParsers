@@ -58,7 +58,7 @@ class CParAtomss extends CParMain {
         ];
         $this->productCount = $this->gettingUrls($underCat, $data, true);
 
-        $this->productCount = array_slice($this->productCount, 0, 1);
+        #$this->productCount = array_slice($this->productCount, 1, count($this->productCount)-1);
         $this->logMessage("Найдено " . count($this->productCount) . " подподкатегорий.");
 
         $categories = [];
@@ -72,6 +72,21 @@ class CParAtomss extends CParMain {
             }
         }
 
+        $this->logMessage("Пагинация ссылок...");
+        $data = [
+            "title" => "Пагинация",
+            "log" => "пагинации",
+            "paginate_selector" => '//div[@class="pages"]/div/a',
+            "last_button_id" => 1,
+            "url_argument" => "/page/",
+            "html_argument" => "nodeValue",
+
+        ];
+        $this->productCount = $this->gettingUrls($categories, $data, true);
+        #$this->productCount = array_slice($this->productCount, 0, 2);
+        $this->logMessage("Получено " . count($this->productCount) . " ссылок на страницы с товарами.");
+
+
         $data = [
             "title" => "Ссылки на товары",
             "log" => "ссылок на товары",
@@ -80,8 +95,8 @@ class CParAtomss extends CParMain {
             "big_data" => true
         ];
 
-        $this->productCount = $this->gettingUrls($categories, $data);
-        $this->logMessage("Получено " . count($categories) . " ссылок на страницы товаров.");
+        $this->productCount = $this->gettingUrls($this->productCount, $data);
+        $this->logMessage("Получено " . count($this->productCount) . " ссылок на страницы товаров.");
 
 
         $this->logMessage("Начало парсинга товаров...");

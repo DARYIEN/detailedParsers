@@ -79,7 +79,7 @@ class CParSpecOkraska extends CParMain {
 
             "lit_selector" => '//div[@class="card-about__content"]/a[@class="_file"]',
             "prop_type" => "dual",
-            "prop_selector" => '//div[@id="section-characteristics"]//div[@class="nj6"]/div',
+            "prop_selector" => '//div[@id="section-characteristics"]//div[@class="nj6"]/div/dl',
             "prop1" => './/span',
             "prop2" => './/dd',
 

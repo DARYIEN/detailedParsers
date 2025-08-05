@@ -70,7 +70,7 @@ class CParDevilBissClub extends CParMain {
             "prop1" => './/span',
             "prop2" => './/div',
 
-            "description_selector" => '//div[@id="content_description"]//p',
+            "description_selector" => '//div[@id="content_description"]',
         ];
         $this->batchSize = 4000;
         $productsData = $this->gettingUrls($this->productCount, $data, true);

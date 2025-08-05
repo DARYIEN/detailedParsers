@@ -64,13 +64,13 @@ class CParDevilBiss extends CParMain {
             "image_html_argument" => "src",
             "absolute_link" => false,
 
-            "lit_selector" => '//div[@class="menu_info_content_special_feature"]/a[1]',
+            "lit_selector" => '//ul[@class="LitList"]/li/a',
             "prop_type" => "dual",
             "prop_selector" => '//div[@class="menu_info_content_special_feature"]//tr',
             "prop1" => './/td[1]',
             "prop2" => './/td[2]',
 
-            "description_selector" => '//div[@class="menu_info_content_special_feature"]/p | //div[@class="menu_info_content_special_feature"]//li',
+            "description_selector" => '//div[@class="menu_info_content_special_feature"]',
         ];
         $this->batchSize = 4000;
         $productsData = $this->gettingUrls($this->productCount, $data, true);
