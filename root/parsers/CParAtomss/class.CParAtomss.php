@@ -7,6 +7,7 @@ ini_set('error_reporting', E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED & ~E_S
 ini_set('display_errors', 1);
 class CParAtomss extends CParMain {
     static $name_parser = array(
+
         "Atomss" => "АтомСпецСплав"
     );
     function __construct() {
@@ -83,7 +84,7 @@ class CParAtomss extends CParMain {
 
         ];
         $this->productCount = $this->gettingUrls($categories, $data, true);
-        #$this->productCount = array_slice($this->productCount, 0, 2);
+        $this->productCount = array_slice($this->productCount, 5000, 500);
         $this->logMessage("Получено " . count($this->productCount) . " ссылок на страницы с товарами.");
 
 

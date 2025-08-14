@@ -35,6 +35,7 @@ class CParMain
 
 
         foreach ($links as $index => $link) {
+            if (!$data["postfix"]) $link . $data["postfix"];
             $link = $this->encodeUrl($link);
             $this->logMessage($link);
             $ch = curl_init($link);
@@ -57,7 +58,7 @@ class CParMain
                 if ($data["title"] === "Товары" || ($shortparse && $data["title"] = "Ссылки на товары")) $this->logMessage("На данный момент при обработке {$data['log']} найдено объектов: " . $productsData);
                 else $this->logMessage("На данный момент при обработке {$data['log']} найдено объектов: " . count($productsData));
                 if ($this->slower_parse) {
-                    sleep(1);
+                    sleep(2);
                 } else {
                     sleep(0.3);
                 }
@@ -392,47 +393,107 @@ class CParMain
 
             }
             elseif ($data["title"] === "Пагинация") {
-                # Nodes
+                # Узлы пагинации
                 $paginationItems = $xpath->query($data["paginate_selector"]);
                 $paginationLinks = ["$key"];
 
-                # Нахождение последней страницы
                 if ($paginationItems->length >= 2) {
-                    $penultimateItem = $paginationItems->item($paginationItems->length - $data["last_button_id"]);
-                    if ($data["html_argument"] === "nodeValue") $last_page = $penultimateItem->nodeValue;
-                    if ($data["html_argument"] === "href/") {
-                        $url = $penultimateItem->getAttribute("href");
-                        preg_match('/\/page\/(\d+)\//', $url, $matches);
-                        $last_page = $matches[1];
+                    if (!$data["pagination_type"]) $data["pagination_type"] = "standard";
+                    # Определяем тип пагинации
+                    switch ($data["pagination_type"]) {
+
+                        case 'virtue':
+                            $max_start = 0;
+                            $base_url = '';
+
+                            foreach ($paginationItems as $item) {
+                                $url = $item->getAttribute("href");
+                                if (!$url) continue;
+
+                                // Добавляем домен, если ссылка относительная
+                                if (strpos($url, 'http') !== 0) {
+                                    $url = rtrim($this->site_link, '/') . '/' . ltrim($url, '/');
+                                }
+
+                                // Определяем max start
+                                if (preg_match('/[?&]start=(\d+)/', $url, $matches)) {
+                                    $start_value = (int)$matches[1];
+                                    if ($start_value > $max_start) $max_start = $start_value;
+
+                                    // База = ссылка без самого параметра start
+                                    $base_url = preg_replace('/([?&])start=\d+(&?)/', '$1', $url);
+                                    $base_url = rtrim($base_url, '?&');
+                                }
+                            }
+
+                            // Если нет базы — берём текущий $key
+                            if (!$base_url) {
+                                if (strpos($key, 'http') !== 0) {
+                                    $base_url = rtrim($this->site_link, '/') . '/' . ltrim($key, '/');
+                                } else {
+                                    $base_url = $key;
+                                }
+                            }
+
+                            if (!$data["inc"]) $data["inc"] = 30;
+
+                            for ($start = $data["inc"]; $start <= $max_start; $start += $data["inc"]) {
+                                $separator = (strpos($base_url, '?') !== false) ? '&' : '?';
+                                $current_page = $base_url . $separator . 'start=' . $start;
+                                $paginationLinks[] = $current_page;
+                            }
+
+                            $this->logMessage("VirtueMart: найдено " . count($paginationLinks) . " ссылок пагинации для категории: " . $key);
+                            break;
+
+
+
+                        case 'standard': // Обычная постраничная навигация
+                        default:
+                            $penultimateItem = $paginationItems->item($paginationItems->length - $data["last_button_id"]);
+
+                            if ($data["html_argument"] === "nodeValue") {
+                                $last_page = $penultimateItem->nodeValue;
+                            }
+                            elseif ($data["html_argument"] === "href/") {
+                                $url = $penultimateItem->getAttribute("href");
+                                preg_match('/\/page\/(\d+)\//', $url, $matches);
+                                $last_page = $matches[1];
+                            }
+                            elseif ($data["html_argument"] === "href=") {
+                                $url = $penultimateItem->getAttribute("href");
+                                $page_arg = preg_quote($data["url_argument"], "/");
+                                preg_match("/{$page_arg}(\d+)/", $url, $matches);
+                                $last_page = $matches[1];
+                            }
+
+                            if ($data[".html"]) {
+                                $key = substr($key, 0, strlen($key) - 5);
+                            }
+
+                            if (!$data["inc"]) $data["inc"] = 1;
+                            for ($i = 2; $i <= (int)$last_page; $i += $data["inc"]) {
+                                if ($data[".html"]) {
+                                    $current_page = "$key{$data['url_argument']}$i.html";
+                                } else {
+                                    if ($data["/}"]) $current_page = "$key/{$data['url_argument']}$i/";
+                                    else  $current_page = "$key{$data['url_argument']}$i";
+                                }
+                                if (!in_array($current_page, $paginationLinks)) {
+                                    $paginationLinks[] = $current_page;
+                                }
+                            }
+
+                            $this->logMessage("Standard: найдено " . count($paginationLinks) . " ссылок пагинации для категории: " . $key);
+                            break;
                     }
-                    if ($data["html_argument"] === "href=") {
-                        $url = $penultimateItem->getAttribute("href");
-                        $page_arg = preg_quote($data["url_argument"], "/");
-                        preg_match("/{$page_arg}(\d+)/", $url, $matches);
-                        $last_page = $matches[1];
-                    }
+
                 } else {
                     $this->logMessage("Найдено " . count($paginationLinks) . " ссылок на пагинацию для категории: " . $key);
                     $productsData = array_merge($productsData, $paginationLinks);
                     continue;
                 }
-                if ($data[".html"]) {
-                    $key = substr($key, 0, strlen($key) - 5);
-                }
 
-                # Создание ссылок на все страницы
-                for ($i = 2; $i <= (int)$last_page; $i++) {
-                    if ($data[".html"]) {
-                        $current_page = "$key{$data['url_argument']}$i.html";
-                    } else {
-                        if ($data["/}"]) $current_page = "$key/{$data['url_argument']}$i/";
-                        else  $current_page = "$key{$data['url_argument']}$i";
-                    }
-
-                    if (!in_array($current_page, $paginationLinks)) $paginationLinks[] = $current_page;
-
-                }
-                $this->logMessage("Найдено " . count($paginationLinks) . " ссылок на пагинацию для категории: " . $key);
                 $productsData = array_merge($productsData, $paginationLinks);
             }
             elseif ($data["title"] === "Ссылки на товары") {
@@ -503,7 +564,8 @@ class CParMain
                     $crumbs = [];
                     $crumbNodes = $xpath->query($data["crumb_selector"]);
                     foreach ($crumbNodes as $crumbNode) {
-                        $crumb = $crumbNode->nodeValue;
+                        if ($data["crumb_html_argument"]) $crumb = $crumbNode->getAttribute($data["crumb_html_argument"]);
+                        else $crumb = $crumbNode->nodeValue;
                         $crumbs[] = trim($crumb);
                     }
                     $crumbs = array_slice($crumbs, $data["crumb_begin"], count($crumbs) - $data["crumb_end"]);
@@ -583,6 +645,7 @@ class CParMain
                 if ($data["prop_selector"]) {
                     $props = [];
                     $propNodes = $xpath->query($data["prop_selector"]);
+
                     if ($data["lit_selector"]) {
                         $litNodes = $xpath->query($data["lit_selector"]);
                         for ($i = 0; $i < $litNodes->length; $i++) {
@@ -594,10 +657,31 @@ class CParMain
                             }
                         }
                     }
+                    if ($data["prop_comp_selector"]) {
+                        $propcompNodes = $xpath->query($data["prop_comp_selector"]);
+                        foreach ($propcompNodes as $propcompNode) {
+                            $prop_name = $xpath->query($data["prop_comp1"], $propcompNode)->item(0)->nodeValue;
+                            $prop_value = $xpath->query($data["prop_comp2"], $propcompNode);
+                            $value = '';
+                            foreach ($prop_value as $prop_valu) {
+                                $value .= trim($prop_valu->nodeValue) . " $ ";
+                            }
+                            $props[$prop_name] = $value;
+                        }
+                    }
+                    if ($data["prop_selector2"]) {
+                        $prop2Nodes = $xpath->query($data["prop_selector2"]);
+
+                        foreach ($prop2Nodes as $propNode) {
+                            $prop = trim($propNode->nodeValue);
+                            $parts = explode(':', $prop, 2);
+                            if (count($parts) == 2) $props[trim($parts[0])] = trim($parts[1]);
+                        }
+                    }
                     if ($data["prop_type"] === "mono") {
                         for ($i = 0; $i < $propNodes->length; $i += 2) {
-                            $prop_name = $propNodes->item($i);
-                            $prop_value = $propNodes->item($i + 1);
+                            $prop_name = $propNodes->item($i)->nodeValue;
+                            $prop_value = $propNodes->item($i + 1)->nodeValue;
                             $props[$prop_name] = $prop_value;
                         }
                     } elseif ($data["prop_type"] === "dual") {
@@ -609,17 +693,11 @@ class CParMain
                         }
                     }
                 }
-                $description = '';
+                $description = "";
                 if ($data["description_selector"]) {
                     $descriptionNodes = $xpath->query($data["description_selector"]);
                     if ($descriptionNodes->length > 0) {
-                        foreach ($descriptionNodes as $descriptionNode) {
-                            if ($data["title_html_argument"]) {
-                                $description = $description . trim($descriptionNode->getAttribute($data["description_html_argument"]));
-                            } else {
-                                $description = $description . trim($descriptionNode->nodeValue);
-                            }
-                        }
+                        $description = $this->normalizeHtmlNode($descriptionNodes->item(0));
                     }
                 }
 
@@ -649,15 +727,16 @@ class CParMain
         }
     }
 
-    public function parseSave($productsData) {
+    public function parseSave($productsData, $data) {
         $this->logMessage("🔄 Запуск обработки товаров...");
 
-        // 1. Объединение батчей из JSON
+        // 1. Объединение
         $productsData = $this->mergeTemporaryFiles($productsData);
         $this->cleanupTemporaryFiles();
         $this->logMessage("📦 Всего товаров после объединения: " . count($productsData));
+        if (function_exists('gc_collect_cycles')) gc_collect_cycles();
 
-        // 2. Проверь использование памяти
+        // 2. Проверка памяти
         $memoryUsage = memory_get_usage(true);
         $memoryLimit = $this->parseMemoryLimit(ini_get('memory_limit'));
         if ($memoryUsage > ($memoryLimit * 0.8)) {
@@ -665,7 +744,7 @@ class CParMain
             if (function_exists('gc_collect_cycles')) gc_collect_cycles();
         }
 
-        // 3. Подготовка структуры, группировка по первой крошке
+        // 3. Группировка
         $propMap = include __DIR__ . '/prop_dictionary.php';
         $groups = array();
         $allPropKeys = array();
@@ -688,59 +767,64 @@ class CParMain
             }
             $allPropKeys['Габариты'] = true;
         }
+
         $propKeys = array_keys($allPropKeys);
         sort($propKeys);
 
-        // 4. Формируем headers
+        // 4. Категории
+        $wantedCategories = (isset($data["target_categories"]) && is_array($data["target_categories"])) ? $data["target_categories"] : null;
+        if (!$wantedCategories) {
+            $groupSizes = array();
+            foreach ($groups as $cat => $items) {
+                $groupSizes[$cat] = count($items);
+            }
+            arsort($groupSizes);
+            $wantedCategories = array_slice(array_keys($groupSizes), 0, 7);
+            $this->logMessage("📊 Автовыбор топ-7 категорий:");
+            foreach ($wantedCategories as $catName) {
+                $this->logMessage("   — " . $catName . ' (' . count($groups[$catName]) . ' товаров)');
+            }
+        }
+
+        // 5. Заголовки
         $headers = array();
         for ($i = 1; $i <= $maxCrumbsCount; $i++) $headers[] = "Крошка {$i}";
-        $headers = array_merge($headers, ['Ссылка', 'Название', 'Цена', 'Ед. изм.']);
+        $headers = array_merge($headers, array('Ссылка', 'Название', 'Цена', 'Ед. изм.'));
         for ($i = 1; $i <= $maxImagesCount; $i++) $headers[] = "Изображение {$i}";
         $headers = array_merge($headers, $propKeys);
         $headers[] = 'Описание';
 
-
-        $dir = dirname((new \ReflectionClass($this))->getFileName());
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-
+        // 6. CSV
+        $dir = dirname((new ReflectionClass($this))->getFileName());
         $csvFile = $dir . DIRECTORY_SEPARATOR . get_class($this) . '_' . date('Ymd_His') . '.csv';
         $this->saveProductsToCsv($csvFile, $productsData, $headers, $propMap, $maxCrumbsCount, $maxImagesCount);
 
-        // 5. Лист «Все товары»
+        // 7. Excel
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheetAll = $spreadsheet->getActiveSheet();
         $sheetAll->setTitle('Все товары');
+        $sheetAll->fromArray($headers, null, 'A1');
 
-        // Заголовки
-        $col = 1;
-        foreach ($headers as $h) {
-            $sheetAll->setCellValueByColumnAndRow($col++, 1, $h);
-        }
-
-        // Запись всех товаров с логами каждые 1000 строк
-        $rowNum = 2;
+        $rowData = array();
         foreach ($productsData as $item) {
-            $row = $this->flattenProductRow($item, $headers, $propMap, $maxCrumbsCount, $maxImagesCount);
-            $col = 1;
-            foreach ($row as $val) {
-                $sheetAll->setCellValueByColumnAndRow($col++, $rowNum, $val);
-            }
-            if (($rowNum - 1) % 1000 == 0) {
-                $this->logMessage("Все товары: записано " . ($rowNum - 1) . " строк...");
-            }
-            $rowNum++;
+            $rowData[] = $this->flattenProductRow($item, $headers, $propMap, $maxCrumbsCount, $maxImagesCount);
         }
-        $this->logMessage("✅ Лист «Все товары» записан строк: " . ($rowNum - 2));
+        $sheetAll->fromArray($rowData, null, 'A2');
+        unset($rowData);
+        $this->logMessage("✅ Лист «Все товары» записан строк: " . count($productsData));
 
-        // 6. Листы по категориям
+        // 8. Отдельные листы
         foreach ($groups as $cat => $items) {
+            if (!in_array($cat, $wantedCategories)) continue;
+
             $safeTitle = $this->sanitizeSheetTitle($cat);
             $sheet = $spreadsheet->createSheet();
             $sheet->setTitle($safeTitle);
 
-            // Локальные пропсы
-            $groupPropKeys = [];
+            $groupPropKeys = array();
             $maxGroupCrumbs = 0;
             $maxGroupImages = 0;
+
             foreach ($items as $item) {
                 $maxGroupCrumbs = max($maxGroupCrumbs, isset($item['crumbs']) ? count($item['crumbs']) : 0);
                 $maxGroupImages = max($maxGroupImages, isset($item['images']) ? count($item['images']) : 0);
@@ -748,46 +832,33 @@ class CParMain
                     foreach ($item['props'] as $key => $val) {
                         $keyNorm = $this->normalizeKey($key);
                         $normKey = isset($propMap[$keyNorm]) ? $propMap[$keyNorm] : ucfirst($keyNorm);
-                        if (!in_array($normKey, ['Габариты','Длина','Ширина','Высота'])) {
+                        if (!in_array($normKey, array('Габариты','Длина','Ширина','Высота'))) {
                             $groupPropKeys[$normKey] = true;
                         }
                     }
                 }
                 $groupPropKeys['Габариты'] = true;
             }
-            $propKeysLocal = array_keys($groupPropKeys);
-            sort($propKeysLocal);
 
-            $headersLocal = [];
+            $headersLocal = array();
             for ($i = 1; $i <= $maxGroupCrumbs; $i++) $headersLocal[] = "Крошка {$i}";
-            $headersLocal = array_merge($headersLocal, ['Ссылка', 'Название', 'Цена', 'Ед. изм.']);
+            $headersLocal = array_merge($headersLocal, array('Ссылка', 'Название', 'Цена', 'Ед. изм.'));
             for ($i = 1; $i <= $maxGroupImages; $i++) $headersLocal[] = "Изображение {$i}";
-            $headersLocal = array_merge($headersLocal, $propKeysLocal);
+            $headersLocal = array_merge($headersLocal, array_keys($groupPropKeys));
             $headersLocal[] = 'Описание';
 
-            // Записать заголовки
-            $col = 1;
-            foreach ($headersLocal as $h) {
-                $sheet->setCellValueByColumnAndRow($col++, 1, $h);
-            }
+            $sheet->fromArray($headersLocal, null, 'A1');
 
-            // Записать товары с логами по 1000 строк
-            $rowNum = 2;
+            $rowData = array();
             foreach ($items as $item) {
-                $row = $this->flattenProductRow($item, $headersLocal, $propMap, $maxGroupCrumbs, $maxGroupImages);
-                $col = 1;
-                foreach ($row as $val) {
-                    $sheet->setCellValueByColumnAndRow($col++, $rowNum, $val);
-                }
-                if (($rowNum - 1) % 1000 == 0) {
-                    $this->logMessage("Категория '{$safeTitle}': записано " . ($rowNum - 1) . " строк...");
-                }
-                $rowNum++;
+                $rowData[] = $this->flattenProductRow($item, $headersLocal, $propMap, $maxGroupCrumbs, $maxGroupImages);
             }
-            $this->logMessage("✅ Лист «{$safeTitle}» записан строк: " . ($rowNum - 2));
+            $sheet->fromArray($rowData, null, 'A2');
+            unset($rowData);
+            $this->logMessage("✅ Лист «{$safeTitle}» записан строк: " . count($items));
         }
 
-        // 7. Сохраняем XLSX в папку класса
+        // 9. Сохраняем Excel
         $fileName = $dir . DIRECTORY_SEPARATOR . get_class($this) . '_' . date('Ymd_His') . '_full.xlsx';
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         $writer->save($fileName);
@@ -888,6 +959,44 @@ class CParMain
 
 // Дополнительные вспомогательные методы
 
+    function normalizeHtmlNode(DOMNode $node,  $level = 0)  {
+        $output = '';
+        $tab = str_repeat("\t", $level);
+
+        foreach ($node->childNodes as $child) {
+            switch ($child->nodeType) {
+                case XML_TEXT_NODE:
+                    $text = trim($child->textContent);
+                    if ($text !== '') {
+                        $output .= $tab . $text . "\n";
+                    }
+                    break;
+
+                case XML_ELEMENT_NODE:
+                    $name = strtolower($child->nodeName);
+
+                    if ($name === 'br') {
+                        $output .= "\n";
+                    } elseif (in_array($name, ['p', 'div'])) {
+                        $inner = trim($this->normalizeHtmlNode($child, $level));
+                        if ($inner !== '') {
+                            $output .= $inner . "\n";
+                        }
+                    } elseif ($name === 'ul' || $name === 'ol') {
+                        $output .= $this->normalizeHtmlNode($child, $level + 1);
+                    } elseif ($name === 'li') {
+                        $text = trim($this->normalizeHtmlNode($child, $level + 1));
+                        if ($text !== '') {
+                            $output .= $tab . "• " . $text . "\n";
+                        }
+                    } else {
+                        $output .= $this->normalizeHtmlNode($child, $level); // обработка span, strong, etc.
+                    }
+                    break;
+            }
+        }
+        return $output;
+    }
     public function sanitizeSheetTitle($title) {
         $title = preg_replace('/[\\\\\\/\\?\\*\\[\\]\\:]/u', '', $title);
         return mb_substr($title, 0, 31);
