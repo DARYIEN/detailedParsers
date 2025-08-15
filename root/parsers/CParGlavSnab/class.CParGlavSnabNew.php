@@ -12,7 +12,7 @@ class CParGlavSnab extends CParMain {
         $this->decimal = false;
         $this->site_link = "https://glavsnab.net";
         $this->author = "Никита";
-        $this->batches = 3;
+        $this->batches = 2;
         $this->slower_parse = true;
     }
 
@@ -30,7 +30,7 @@ class CParGlavSnab extends CParMain {
         ];
         $this->productCount = $this->gettingUrls($url, $data);
 
-        $this->productCount = array_slice($this->productCount, 10, 5);
+        $this->productCount = array_slice($this->productCount, 35, 20);
         $this->logMessage("Найдено " . count($this->productCount) . " категорий.");
 
 

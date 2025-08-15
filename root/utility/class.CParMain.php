@@ -58,7 +58,7 @@ class CParMain
                 if ($data["title"] === "Товары" || ($shortparse && $data["title"] = "Ссылки на товары")) $this->logMessage("На данный момент при обработке {$data['log']} найдено объектов: " . $productsData);
                 else $this->logMessage("На данный момент при обработке {$data['log']} найдено объектов: " . count($productsData));
                 if ($this->slower_parse) {
-                    sleep(2);
+                    sleep(2.5);
                 } else {
                     sleep(0.3);
                 }
@@ -358,7 +358,7 @@ class CParMain
             $dom = new DOMDocument();
             libxml_use_internal_errors(true);
             $encoding = mb_detect_encoding($html, ['UTF-8', 'Windows-1251', 'ISO-8859-1', 'CP1252'], true);
-            if ($encoding == "Windows-1251" || strpos($this->site_link, "stenovoy.ru") || strpos($this->site_link, "i-gbi.ru") || strpos($this->site_link, "gbi6.ru") || strpos($this->site_link, "invest-gbi.ru")) { // ||  strpos($this->site_link, "gbi13.ru")
+            if ($encoding == "Windows-1251" || strpos($this->site_link, "grovers.ru") || strpos($this->site_link, "stenovoy.ru") || strpos($this->site_link, "i-gbi.ru") || strpos($this->site_link, "gbi6.ru") || strpos($this->site_link, "invest-gbi.ru")) { // ||  strpos($this->site_link, "gbi13.ru")
                 $html = mb_convert_encoding($html, 'UTF-8', 'Windows-1251');
             }
             $html = mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'); // Конвертация с учетом спецсимволов
