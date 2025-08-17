@@ -87,6 +87,9 @@ class CparKrasimPravilno extends CParMain {
             "prop_selector" => '//div[@class="rm-product-center-info"]/div[1] | //div[@class="rm-product-center-info"]/div[2]',
             "prop1" => './/span[1]',
             "prop2" => './/span[2]',
+            "prop_comp_selector" => '//div[@class="form-group"]/div[1]',
+            "prop_comp1" => './/label[@class="rm-control-label"]',
+            "prop_comp2" => './/div/div/label',
 
             "description_selector" => '//div[@id="product_description"]',
         ];

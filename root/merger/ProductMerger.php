@@ -483,10 +483,10 @@ const ROOT = __DIR__;
 require __DIR__ . '/../../vendor/autoload.php';
 
 $files = array(
-    "CParSortMet_20250805_163542.csv",
-    "2.csv",
-    "3.csv",
-    "4.csv",
+    "CParGlavSnab_20250814_054033.csv",
+    "CParGlavSnab_20250814_115249.csv",
+    "CParGlavSnab_20250815_122804.csv",
+    "CParGlavSnab_20250815_133357.csv",
 );
 
 $merger = new CsvXlsxMerger(null, true); // Включаем отладочный режим

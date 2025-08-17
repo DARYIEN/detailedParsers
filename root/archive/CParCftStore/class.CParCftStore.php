@@ -58,7 +58,7 @@ class CParCftStore extends CParMain {
             "price_selector" => '//span[@class="woocommerce-Price-amount amount"]/bdi/text()',
             "unit_selector" => '',
 
-            "image_selector" => '//div[@class="woocommerce__slider-thumbs"]/img',
+            "image_selector" => '//div[@class="woocommerce__slider-thumbs"]//img',
             "image_html_argument" => "src",
             "absolute_link" => false,
 

@@ -58,7 +58,7 @@ class CParMain
                 if ($data["title"] === "Товары" || ($shortparse && $data["title"] = "Ссылки на товары")) $this->logMessage("На данный момент при обработке {$data['log']} найдено объектов: " . $productsData);
                 else $this->logMessage("На данный момент при обработке {$data['log']} найдено объектов: " . count($productsData));
                 if ($this->slower_parse) {
-                    sleep(2.5);
+                    sleep(1);
                 } else {
                     sleep(0.3);
                 }
@@ -674,7 +674,8 @@ class CParMain
 
                         foreach ($prop2Nodes as $propNode) {
                             $prop = trim($propNode->nodeValue);
-                            $parts = explode(':', $prop, 2);
+                            if ($data["prop_sep"]) $parts = explode($data["prop_sep"], $prop, 2);
+                            else $parts = explode(':', $prop, 2);
                             if (count($parts) == 2) $props[trim($parts[0])] = trim($parts[1]);
                         }
                     }

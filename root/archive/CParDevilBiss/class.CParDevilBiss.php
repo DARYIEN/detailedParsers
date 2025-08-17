@@ -61,7 +61,7 @@ class CParDevilBiss extends CParMain {
             "unit_selector" => '',
 
             "image_selector" => '//div[@class="selected_popup_mini_photo_wrap"]/div/img',
-            "image_html_argument" => "src",
+            "image_html_argument" => "data-original-src",
             "absolute_link" => false,
 
             "lit_selector" => '//ul[@class="LitList"]/li/a',
@@ -69,6 +69,8 @@ class CParDevilBiss extends CParMain {
             "prop_selector" => '//div[@class="menu_info_content_special_feature"]//tr',
             "prop1" => './/td[1]',
             "prop2" => './/td[2]',
+            "prop_selector2" => '//div[./span[@id="changingArticule"]]',
+            "prop_sep" => ".",
 
             "description_selector" => '//div[@class="menu_info_content_special_feature"]',
         ];
